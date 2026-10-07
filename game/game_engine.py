@@ -1,7 +1,9 @@
 import math
+import random
 import pygame
 from game.player import Player
 from game.anvil import Anvil
+from game.particle import Particle
 
 
 class GameEngine:
@@ -10,6 +12,7 @@ class GameEngine:
         self.height = height
         self.player = Player(width, height)
         self.anvils = []
+        self.particles = []
 
         self.spawn_delay = 700
         self.last_spawn_time = pygame.time.get_ticks()
@@ -17,6 +20,11 @@ class GameEngine:
         self.start_ticks = pygame.time.get_ticks()
         self.survival_time = 0
         self.game_state = "PLAYING"
+
+        self.ground_y = height - 20
+        self.shake_offset_x = 0
+        self.shake_offset_y = 0
+        self.shake_intensity = 0
 
         self.font_big = pygame.font.SysFont(None, 52)
         self.font_medium = pygame.font.SysFont(None, 34)
@@ -62,44 +70,81 @@ class GameEngine:
             if player_rect.colliderect(anvil.rect):
                 self.game_state = "GAME_OVER"
 
-            if anvil.is_off_screen(self.height):
+            # Ground impact detection: anvil bottom edge hits the ground line
+            if anvil.y + anvil.height >= self.ground_y:
+                impact_x = anvil.x + anvil.width // 2
+                impact_y = self.ground_y
+                # Spawn a burst of dust particles at impact point
+                for _ in range(random.randint(6, 10)):
+                    self.particles.append(Particle(impact_x, impact_y))
+                # Trigger screen shake proportional to anvil speed
+                self.shake_intensity = min(6, anvil.speed * 0.4)
                 self.anvils.remove(anvil)
+            elif anvil.is_off_screen(self.height):
+                self.anvils.remove(anvil)
+
+        # Update particles
+        for p in self.particles[:]:
+            p.update()
+            if p.is_dead():
+                self.particles.remove(p)
+
+        # Decay screen shake
+        if self.shake_intensity > 0:
+            self.shake_offset_x = random.uniform(-self.shake_intensity, self.shake_intensity)
+            self.shake_offset_y = random.uniform(-self.shake_intensity, self.shake_intensity)
+            self.shake_intensity *= 0.8  # exponential decay
+            if self.shake_intensity < 0.3:
+                self.shake_intensity = 0
+                self.shake_offset_x = 0
+                self.shake_offset_y = 0
 
     def reset(self):
         self.player = Player(self.width, self.height)
         self.anvils.clear()
+        self.particles.clear()
         self.start_ticks = pygame.time.get_ticks()
         self.last_spawn_time = pygame.time.get_ticks()
         self.survival_time = 0
         self.game_state = "PLAYING"
+        self.shake_intensity = 0
+        self.shake_offset_x = 0
+        self.shake_offset_y = 0
 
     def render(self, screen):
-        screen.fill((35, 38, 45))
+        # Draw everything onto an internal surface, then blit with shake offset
+        canvas = pygame.Surface((self.width, self.height))
+        canvas.fill((35, 38, 45))
 
-        ground_y = self.height - 20
-        pygame.draw.rect(screen, (70, 75, 85), (0, ground_y, self.width, 20))
-        pygame.draw.line(screen, (160, 90, 40), (0, ground_y), (self.width, ground_y), 3)
+        pygame.draw.rect(canvas, (70, 75, 85), (0, self.ground_y, self.width, 20))
+        pygame.draw.line(canvas, (160, 90, 40), (0, self.ground_y), (self.width, self.ground_y), 3)
 
-        self.player.render(screen)
+        self.player.render(canvas)
         for anvil in self.anvils:
-            anvil.render(screen)
+            anvil.render(canvas)
+        for p in self.particles:
+            p.render(canvas)
 
         time_surf = self.font_medium.render(f"Survival Time: {self.survival_time}s", True, (240, 240, 240))
-        screen.blit(time_surf, (20, 20))
+        canvas.blit(time_surf, (20, 20))
 
         inst_surf = self.font_small.render("Use [A/D] or [Arrow Keys] to Dodge", True, (170, 175, 185))
-        screen.blit(inst_surf, (self.width - inst_surf.get_width() - 20, 25))
+        canvas.blit(inst_surf, (self.width - inst_surf.get_width() - 20, 25))
 
         if self.game_state == "GAME_OVER":
             overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
             overlay.fill((0, 0, 0, 190))
-            screen.blit(overlay, (0, 0))
+            canvas.blit(overlay, (0, 0))
 
             over_surf = self.font_big.render("CRUSHED! GAME OVER", True, (235, 65, 65))
-            screen.blit(over_surf, (self.width // 2 - over_surf.get_width() // 2, self.height // 2 - 60))
+            canvas.blit(over_surf, (self.width // 2 - over_surf.get_width() // 2, self.height // 2 - 60))
 
             score_surf = self.font_medium.render(f"You survived: {self.survival_time} seconds", True, (255, 255, 255))
-            screen.blit(score_surf, (self.width // 2 - score_surf.get_width() // 2, self.height // 2))
+            canvas.blit(score_surf, (self.width // 2 - score_surf.get_width() // 2, self.height // 2))
 
             restart_surf = self.font_small.render("Press [R] to Play Again", True, (200, 200, 200))
-            screen.blit(restart_surf, (self.width // 2 - restart_surf.get_width() // 2, self.height // 2 + 50))
+            canvas.blit(restart_surf, (self.width // 2 - restart_surf.get_width() // 2, self.height // 2 + 50))
+
+        # Apply screen shake offset, then blit canvas to the actual screen
+        screen.fill((35, 38, 45))
+        screen.blit(canvas, (int(self.shake_offset_x), int(self.shake_offset_y)))
