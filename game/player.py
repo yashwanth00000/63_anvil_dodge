@@ -19,7 +19,10 @@ class Player:
         self.x += self.speed
 
     def update(self):
-        pass
+        if self.x < 0:
+            self.x = 0
+        if self.x > self.screen_width - self.width:
+            self.x = self.screen_width - self.width
 
     @property
     def rect(self):
