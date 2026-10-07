@@ -1,3 +1,4 @@
+import math
 import pygame
 from game.player import Player
 from game.anvil import Anvil
@@ -40,9 +41,18 @@ class GameEngine:
 
         self.survival_time = (pygame.time.get_ticks() - self.start_ticks) // 1000
 
+        # Dynamic difficulty: smooth logarithmic scaling based on survival time
+        difficulty = 1.0 + math.log1p(self.survival_time * 0.1) * 0.8
+
+        # Spawn delay decreases: 700ms down to a floor of 250ms
+        self.spawn_delay = max(250, int(700 / difficulty))
+
+        # Speed multiplier for newly spawned anvils
+        speed_multiplier = difficulty
+
         now = pygame.time.get_ticks()
         if now - self.last_spawn_time >= self.spawn_delay:
-            self.anvils.append(Anvil(self.width))
+            self.anvils.append(Anvil(self.width, speed_multiplier))
             self.last_spawn_time = now
 
         player_rect = self.player.rect
